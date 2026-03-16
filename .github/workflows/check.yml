@@ -5,12 +5,11 @@ on:
     # Every 4 hours. These UTC times = 5:30 AM / 9:30 AM / 1:30 PM / 5:30 PM / 9:30 PM / 1:30 AM IST
     - cron: "0 0,4,8,12,16,20 * * *"
 
-  # Lets you trigger a manual run from the Actions tab anytime
   workflow_dispatch:
 
 jobs:
   check-watches:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     permissions:
       contents: write
@@ -27,8 +26,20 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Install Playwright browsers (Chromium only)
-        run: playwright install chromium --with-deps
+      - name: Install Chromium system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libnspr4 \
+            libatk1.0-0t64 libatk-bridge2.0-0t64 \
+            libcups2t64 libdrm2 libxkbcommon0 \
+            libxcomposite1 libxdamage1 libxfixes3 \
+            libxrandr2 libgbm1 libpango-1.0-0 \
+            libcairo2 libasound2t64 \
+            fonts-liberation xdg-utils
+
+      - name: Install Playwright Chromium browser
+        run: playwright install chromium
 
       - name: Run HMT scraper
         env:
@@ -36,7 +47,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scraper.py
 
-      - name: Upload debug files (always, for inspection)
+      - name: Upload debug files
         if: always()
         uses: actions/upload-artifact@v4
         with:
