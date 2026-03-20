@@ -29,10 +29,11 @@ def save_seen(seen: set):
 # ── Telegram helpers ──────────────────────────────────────────────────────────
 
 def send_telegram_photo(name: str, image_url: str, product_url: str):
+    # Plain text caption — no Markdown so the URL is never corrupted by the parser
     caption = (
-        f"🕐 *HMT Automatic Watch Available!*\n\n"
-        f"*{name}*\n\n"
-        f"[View & Buy]({product_url})"
+        f"🕐 HMT Automatic Watch Available!\n\n"
+        f"{name}\n\n"
+        f"{product_url}"
     )
     resp = requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
@@ -40,7 +41,6 @@ def send_telegram_photo(name: str, image_url: str, product_url: str):
             "chat_id": TELEGRAM_CHAT_ID,
             "photo": image_url,
             "caption": caption,
-            "parse_mode": "Markdown",
         },
         timeout=15,
     )
@@ -49,7 +49,7 @@ def send_telegram_photo(name: str, image_url: str, product_url: str):
     else:
         print(f"  ⚠️  Telegram photo failed for '{name}', trying text: {resp.text}")
         send_telegram_text(
-            f"🕐 *HMT Automatic Watch Available!*\n\n*{name}*\n\n[View & Buy]({product_url})"
+            f"🕐 HMT Automatic Watch Available!\n\n{name}\n\n{product_url}"
         )
 
 
@@ -59,7 +59,6 @@ def send_telegram_text(message: str):
         data={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": message,
-            "parse_mode": "Markdown",
         },
         timeout=15,
     )
@@ -87,19 +86,19 @@ def scrape_automatic_watches():
         page = context.new_page()
 
         print(f"  🌐  Loading: {AUTOMATIC_URL}")
-        page.goto(AUTOMATIC_URL, wait_until="domcontentloaded", timeout=30000)
+        page.goto(AUTOMATIC_URL, wait_until="networkidle", timeout=60000)
 
-        # Wait for product cards to appear (up to 15 seconds)
+        # Wait for product cards OR "No Product Found" to appear (up to 30 seconds)
         try:
             page.wait_for_selector(
-                "div.product-card, div.col-product, div[class*='product'], a[href*='product_overview']",
-                timeout=15000
+                "div.product-card, div.col-product, div[class*='product'], a[href*='product_overview'], h3, p",
+                timeout=30000
             )
         except PWTimeout:
             print("  ⚠️  Product cards timed out. Saving debug screenshot.")
             page.screenshot(path="debug_screenshot.png")
             browser.close()
-            return []
+            return None
 
         # Scroll to bottom to trigger lazy loading of all products
         prev_height = 0
@@ -139,7 +138,7 @@ def scrape_automatic_watches():
             return parse_from_anchors(anchors)
         else:
             print("  ❌  No product cards or links found.")
-            return []
+            return None
 
     print(f"  📦  Product cards found: {len(products)}")
 
@@ -246,14 +245,26 @@ def main():
     watches = scrape_automatic_watches()
     print(f"  📦  Scraped: {len(watches)} watches")
 
-    if not watches:
-        print("  ⚠️  No watches found. Check debug_page.html in Actions artifacts.")
+    if watches is None:
+        # Scrape genuinely failed — Playwright timed out or found no page structure
+        print("  ❌  Scrape failed. Check debug artifacts in this Actions run.")
         send_telegram_text(
-            "⚠️ HMT Watcher: Could not scrape any products.\n"
-            "Check the GitHub Actions run for debug files.\n"
-            f"Manual check: {AUTOMATIC_URL}"
+            "❌ HMT Watcher scrape FAILED\n"
+            "Playwright could not load the page.\n"
+            "Check GitHub Actions for debug files.\n"
+            "Manual check: https://www.hmtwatches.in/shop_type?type=shop_type&id=9"
         )
         sys.exit(1)
+
+    if len(watches) == 0:
+        # Page loaded fine but no automatic watches found — all out of stock
+        print("  😴  No automatic watches found. All likely out of stock.")
+        send_telegram_text(
+            "🕐 HMT Watcher is running\n"
+            "Checked automatic watches — all out of stock right now."
+        )
+        print("✅  Done (nothing to report).")
+        sys.exit(0)
 
     new_available = [w for w in watches if w["in_stock"] and w["id"] not in seen]
     print(f"  🆕  New in-stock watches: {len(new_available)}")
@@ -265,6 +276,10 @@ def main():
 
     if not new_available:
         print("  😴  No new watches since last check.")
+        send_telegram_text(
+            "🕐 HMT Watcher is running\n"
+            "Checked automatic watches — none newly available."
+        )
 
     # Clear out-of-stock watches from seen so we re-alert if they restock later
     out_of_stock_ids = {w["id"] for w in watches if not w["in_stock"]}
