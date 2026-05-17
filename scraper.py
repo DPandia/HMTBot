@@ -86,13 +86,13 @@ def scrape_automatic_watches():
         page = context.new_page()
 
         print(f"  🌐  Loading: {AUTOMATIC_URL}")
-        page.goto(AUTOMATIC_URL, wait_until="networkidle", timeout=60000)
+        page.goto(AUTOMATIC_URL, wait_until="networkidle", timeout=90000)
 
         # Wait for product cards OR "No Product Found" to appear (up to 30 seconds)
         try:
             page.wait_for_selector(
                 "div.product-card, div.col-product, div[class*='product'], a[href*='product_overview'], h3, p",
-                timeout=30000
+                timeout=45000
             )
         except PWTimeout:
             print("  ⚠️  Product cards timed out. Saving debug screenshot.")
@@ -243,7 +243,6 @@ def main():
     print(f"  📋  Previously seen: {len(seen)} watches")
 
     watches = scrape_automatic_watches()
-    print(f"  📦  Scraped: {len(watches)} watches")
 
     if watches is None:
         # Scrape genuinely failed — Playwright timed out or found no page structure
@@ -252,17 +251,15 @@ def main():
             "❌ HMT Watcher scrape FAILED\n"
             "Playwright could not load the page.\n"
             "Check GitHub Actions for debug files.\n"
-            "Manual check: https://www.hmtwatches.in/shop_type?type=shop_type&id=9"
+            "Manual: https://www.hmtwatches.in/shop_type?type=shop_type&id=9"
         )
         sys.exit(1)
+
+    print(f"  📦  Scraped: {len(watches)} watches")
 
     if len(watches) == 0:
         # Page loaded fine but no automatic watches found — all out of stock
         print("  😴  No automatic watches found. All likely out of stock.")
-        send_telegram_text(
-            "🕐 HMT Watcher is running\n"
-            "Checked automatic watches — all out of stock right now."
-        )
         print("✅  Done (nothing to report).")
         sys.exit(0)
 
@@ -276,10 +273,6 @@ def main():
 
     if not new_available:
         print("  😴  No new watches since last check.")
-        send_telegram_text(
-            "🕐 HMT Watcher is running\n"
-            "Checked automatic watches — none newly available."
-        )
 
     # Clear out-of-stock watches from seen so we re-alert if they restock later
     out_of_stock_ids = {w["id"] for w in watches if not w["in_stock"]}
