@@ -88,10 +88,11 @@ def scrape_automatic_watches():
         print(f"  🌐  Loading: {AUTOMATIC_URL}")
         page.goto(AUTOMATIC_URL, wait_until="networkidle", timeout=90000)
 
-        # Wait for product cards OR "No Product Found" to appear (up to 30 seconds)
+        # Wait for product cards OR "No Product Found" to appear
         try:
             page.wait_for_selector(
-                "div.product-card, div.col-product, div[class*='product'], a[href*='product_overview'], h3, p",
+                "div.product-card, div.col-product, div[class*='product'], "
+                "a[href*='product_overview'], h3, p",
                 timeout=45000
             )
         except PWTimeout:
@@ -99,6 +100,13 @@ def scrape_automatic_watches():
             page.screenshot(path="debug_screenshot.png")
             browser.close()
             return None
+
+        # If "No Product Found" is on the page, return empty list immediately — not a failure
+        page_text = page.inner_text("body")
+        if "no product found" in page_text.lower():
+            print("  😴  Page loaded. No automatic watches in stock right now.")
+            browser.close()
+            return []
 
         # Scroll to bottom to trigger lazy loading of all products
         prev_height = 0
